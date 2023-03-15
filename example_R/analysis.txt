@@ -1,0 +1,42 @@
+Contacts:
+
+
+Bioshare:
+
+
+BioBin:
+
+
+Remote working:
+
+
+Data:
+
+
+Notes:
+
+
+Time Log:
+
+
+###### Start Analysis ######
+
+
+## Reads per sample:
+echo "sample reads adapter" > read_primer_counts.txt
+for f in ./00-RawData/*_R1_*.fastq.gz
+do
+    echo $f
+    echo `basename $f` `unpigz -c -p 50 $f | wc -l | awk '{ print $1/4 }'` `unpigz -c -p 50 $f | grep -c TCTTCTGCTTG` >> read_primer_counts.txt
+done
+
+
+# Run fastqc and multiqc to generate some information on sample quality
+
+mkdir -p ./00-FastQC/samples/
+fastqc -o ./00-FastQC/samples/ -t 60 ./00-RawData/*
+
+module load multiqc
+multiqc -d ./00-FastQC/samples/ -i FastQC -o ./00-FastQC/
+
+

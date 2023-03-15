@@ -1,0 +1,951 @@
+---
+title: "Microbial Community Analysis: Strawberry Microbiome 16s rRNA"
+author: "Sam Hunter"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+    html_document:
+        keep_md: yes
+fig_width: 8
+fig_height: 10
+---
+
+```{r global_options, include=FALSE}
+# Set up global options for nice reports and keeping figures:
+knitr::opts_chunk$set(fig.width=14, fig.height=8, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+### Experimental Description:
+
+Strawberry plants were taken from a nursery and planted in plots within two different fields.
+
+Some plots were infested with a soil pathogen or control.
+
+Multiple different cultivars were planted.
+
+Sampling was done from soil prior to planting, as well as soil adherent to the roots (from the nursery prior to planting).  
+
+Sampling took place during planting (D0), after plants had become established (D1), and several months later (D2).
+
+Samples were taken from the Roots, bulk soil, and rhizosphere.
+
+
+Additional Design Notes:
+
+Each field has plots with a different soil bourn pathogen: 
+      Field 1: *Macrophomina phaseolina* (Mac) or uninfected
+      Field 2: *Verticilium dahliae* (Vert) or uninfected
+
+Within each trial there are control plots without pathogen and treatment plots with pathogen.
+  -There is also another factor, cultivar, three cultivars in each trial.
+  -4 replicates per treatment, cultivar combination.
+  -3 beds for the control reps.
+  -Additional factor time:
+      -sampling soil before plants are introduced,
+          -3x samples, sampling soil from root stocks, tissue, buffer space (but this is only replciated once) that came from the nursery
+      -sampling during vegatative growth
+          -3x samples, sampling soil from root stocks, tissue, buffer space (but this is only replciated once) that came from the nursery
+      -sampling after symptoms 
+          -3x samples, sampling soil from root stocks, tissue, buffer space (but this is only replciated once) that came from the nursery
+
+* Amplicons were produced with 16s V4 and ITS.
+* Sequence provider contact info: Zhiyi Liu - LC Sciences <zliu@lcsciences.com>
+
+
+### Objective: 
+
+  Characterize soil and rhizosphere microbiome in the presence of different pathogens over time for various strawberry cultivars.
+
+### Comparisons:
+
+  1.  Does microbiome differ in response to *M. phaseolina* between cultivars?
+    * Manresa, Marquis, Sweet Anne
+  2.  Does microbiome differ in response to *V. dahliae* between cultivars?
+    * Festival, Marquis, Sweet Anne 
+  3.  Does the microbiome of the rhizosphere change to more closely resemble the soil in the field, or is it maintained after transplant?
+    * Is this change different for infected vs uninfected soil?
+
+
+#### Methods:
+
+1. Library Prep
+    +  Sequence provider contact info: Zhiyi Liu - LC Sciences <zliu@lcsciences.com>
+ 
+2. Sequencing:
+    +  Reads were sequenced on an Illumina MiSeq using Reagent Kit v3, 600-cycle (part number MS-102-3003) by LC Sciences (Zhiyi Liu - LC Sciences <zliu@lcsciences.com>).
+
+3. Sample Demultiplexing, primer trimming
+    +  Sequenced reads were demultiplexed and primers were trimmed by LC Sciences. Specific methods 
+
+4. Read cleaning and overlapping
+    +  Demultiplexed reads were screened to remove reads containing no call bases (N's), screened for PhiX sequences, filtered to retain only reads with the proper primer pairs, trimmed to remove the primer pair, overlapped, filtered to remove reads with overlapped length less than 300bp, and then screened to remove reads containing Illumina adapter sequences using HTStream (https://github.com/s4hts/HTStream). 
+
+5. ASV generation, taxonomic assignment, ASV sequence alignment and phylogenetic tree
+    +  Overlapped reads were denoised, summarized to Amplicon Sequence Variants (ASVs), and filtered for chimeric sequences using DADA2 
+        -  *Callahan, Benjamin J., Paul J. McMurdie, Michael J. Rosen, Andrew W. Han, Amy Jo A. Johnson, and Susan P. Holmes. "DADA2: high-resolution sample inference from Illumina amplicon data." Nature methods 13, no. 7 (2016): 581-583.).*   
+    +  Taxonomic assignment was done using the DADA2 implementation of the naive Bayesian classifier method, RDP 
+        -  *(Wang, Qiong, George M. Garrity, James M. Tiedje, and James R. Cole. "Naive Bayesian classifier for rapid assignment of rRNA sequences into the new bacterial taxonomy." Applied and environmental microbiology 73, no. 16 (2007): 5261-5267.) using UNITE general fasta release 2020-02-04 https://plutof.ut.ee/#/datacite/10.15156/BIO/786368.*
+    +  For 16s classification, the SILVA database reference was used. 
+        *  Yilmaz P, Parfrey LW, Yarza P, Gerken J, Pruesse E, Quast C, Schweer T, Peplies J, Ludwig W, Glöckner FO (2014) The SILVA and "All-species Living Tree Project (LTP)" taxonomic frameworks. Opens external link in new windowNucl. Acids Res. 42:D643-D648.
+        *  Quast C, Pruesse E, Yilmaz P, Gerken J, Schweer T, Yarza P, Peplies J, Glöckner FO (2013) The SILVA ribosomal RNA gene database project: improved data processing and web-based tools. Opens external link in new windowNucl. Acids Res. 41 (D1): D590-D596.
+    +  For ITS classification, the UNITE database was used (https://doi.org/10.15156/BIO/786368)
+        -  *Abarenkov, Kessy; Zirk, Allan; Piirmann, Timo; Pöhönen, Raivo; Ivanov, Filipp; Nilsson, R. Henrik; Kõljalg, Urmas (2020): UNITE general FASTA release for Fungi. Version 04.02.2020. UNITE Community.*
+    +  ASVs were then aligned using DECIPHER and a phylogenetic tree was estimated using phangorn
+        -  Wright, Erik S. "Using DECIPHER v2. 0 to analyze big biological sequence data in R." R Journal 8, no. 1 (2016).
+        -  Schliep, Klaus Peter. "phangorn: phylogenetic analysis in R." Bioinformatics 27, no. 4 (2011): 592-593.
+
+6. Community Analysis
+    +  Normally samples with less than 10,000 reads are filtered from further analysis. However many of the Root samples in this dataset had low yields, but also low complexity. For this reason, no samples were filtered.
+    +  Rarefaction curves were calculated for each sample using vegan (Jari Oksanen, F. Guillaume Blanchet, Michael Friendly, Roeland Kindt, Pierre Legendre,  Dan McGlinn, Peter R. Minchin, R. B. O'Hara, Gavin L. Simpson, Peter Solymos, M. Henry  H. Stevens, Eduard Szoecs and Helene Wagner (2019). vegan: Community Ecology Package. R  package version 2.5-6. https://CRAN.R-project.org/package=vegan)) and plotted using ggplot2 (H. Wickham. ggplot2: Elegant Graphics for Data Analysis. Springer-Verlag New York, 2016.). 
+    +  Various other explorartory plots were produced using ggplot2 and phyloseq (phyloseq: An R package for reproducible interactive analysis and graphics of microbiome census data. Paul J. McMurdie and Susan Holmes (2013) PLoS ONE 8(4):e61217.)
+    +  Various measures of diversity were calculated using the vegan package and plotted with ggplot2.
+
+
+
+```{r librariesetc, echo=FALSE, fig.height=7, fig.width=16, fig.align="center"}
+library(phyloseq)
+#library(biomformat)
+library(ggplot2)
+#library(gridExtra)
+library(vegan)
+#library(edgeR)
+library(magrittr)
+library(kableExtra)
+library(tidyr)
+
+
+options(stringsAsFactors=F)
+
+nice_colors = c("#999999", "#E69F00", "#56B4E9","#e98756","#c08160","#5800e6", "#CDDC49",
+                "#C475D3", "#E94B30", "#233F57", "#FEE659", "#A1CFDD", "#F4755E", "#D6F6F7","#EB6D58", "#6898BF")
+```
+
+### The dataset from DADA2
+
+```{r readphyloseq, echo=FALSE, fig.height=7, fig.width=16, fig.align="center"}
+
+#load(file="../02-DADA2-analysis/phyloseq_nochim_idtaxa.RData")
+load(file="../02-DADA2-analysis/phyloseq_nochim_silva.RData")
+
+# set the data set used for analysis
+ps = ps.silva.nochim
+
+sample_data(ps)$Pathogen = factor(sample_data(ps)$Pathogen, c("none", "Vert", "Mac"))
+sample_data(ps)$Cultivar = factor(sample_data(ps)$Cultivar, c("none", "Festival","Manresa", "Marquis", "SweetAnne"))
+
+# Create another "groups" variable, this does a decent job of color samples
+group = paste(sample_data(ps)$Field, sample_data(ps)$SampleType, sample_data(ps)$Pathogen, sep='.')
+sample_data(ps)$group = group
+
+groupColors = nice_colors[1:length(unique(group))]
+names(groupColors) = unique(group)
+
+# Make some colors for groups:
+# gg_color_hue <- function(n) {
+#   hues = seq(15, 375, length = n + 1)
+#   hcl(h = hues, l = 65, c = 100)[1:n]
+# }
+# cols = gg_color_hue(length(unique(groups)))
+# names(cols) = unique(groups)
+
+
+#sample_data(ps)$SampleID = sample_data(ps)$Sample
+
+# head(otu_table(ps))
+# head(sample_data(ps))
+# head(tax_table(ps))
+# head(refseq(ps))
+
+# rank_names(ps)
+# sample_variables(ps)
+ps
+
+```
+
+
+### QA/QC Data Plots: 
+
+Reads per sample (all samples)
+
+```{r p001_readsPerSampleAll, echo=FALSE, fig.height=7, fig.width=16, fig.align="center"}
+# Reads per sample, all samples
+df = data.frame(samples=sample_names(ps), reads=sample_sums(ps))
+ggplot(df, aes(x=reads)) + geom_histogram(bins=50, color='black', fill='grey') + 
+  theme_bw() + labs(title="Histogram: Reads per Sample") + xlab("Read Count") + ylab("Sample Count")
+```
+Samples have a somewhat less uniform number of reads. All samples have > 10k reads.
+  
+  
+  
+
+```{r p004.1_Reads_by_SampleGroup, echo=FALSE, fig.height=8, fig.width=32, fig.align="center"}
+df = data.frame(ASVs=rowSums(otu_table(ps)>0), Reads=rowSums(otu_table(ps)))
+df = data.frame(df, sample_data(ps)[rownames(df),c("Pathogen","SampleType","SampleGroup", "Field", "group")])
+
+# Scatter Plot, ASVs vs reads
+ggplot(df, aes(x = SampleGroup, y = Reads, color = group)) +
+  geom_boxplot(color="black") + theme_bw() +
+  #scale_color_discrete(groupColors) +
+  geom_jitter(width=.2, height=0)  + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  geom_hline(yintercept=10000, color= "pink", linetype='dashed') +
+  geom_hline(yintercept=1000, color= "red", linetype='dashed') +
+  ggtitle("Reads sequenced by SampleGroup")
+
+```
+
+#### Samples with < 1,000 reads:
+
+```{r lowReadCount, echo=FALSE}
+df = data.frame(samples=sample_names(ps), reads=sample_sums(ps), sample_data(ps)[,c("Pathogen","SampleType","SampleGroup", "Field", "DateGroup")])
+
+kable(df[df$reads < 1000,])  %>% 
+  kable_styling("striped", full_width = F) %>%   row_spec(0, angle = 0)
+```
+
+*  Blank samples were either not sequenced, or produced no reads.
+*  A total of `r sum(df$reads < 10000)` out of `r nrow(df)` samples had less than 10k reads.
+
+-------
+  
+
+### Plot amplicon length distribution
+```{r p002_ampliconLengthDistribution, echo=FALSE, fig.height=7, fig.width=16, fig.align="center"}
+df = data.frame(names=names(refseq(ps)), ASV.Length = Biostrings::width(refseq(ps)))
+ggplot(df, aes(x=ASV.Length)) + geom_histogram(binwidth=1, color='black', fill='grey') + 
+  theme_bw() + labs(title="Histogram: Amplicon Lengths")
+```
+
+Amplicon lengths show two distinct peaks (with maybe 2 additional smaller peaks). 
+
+
+```{r p002.1_ampliconLengthBySampleDistribution, echo=FALSE, fig.height=7, fig.width=16, fig.align="center"}
+## TODO
+### Plot amplicon length distribution by sample group somehow..
+
+# df = data.frame(names=names(refseq(ps)), ASV.Length = Biostrings::width(refseq(ps)))
+# ggplot(df, aes(x=ASV.Length)) + geom_histogram(binwidth=1, color='black', fill='grey') + 
+#   theme_bw() + labs(title="Histogram: Amplicon Lengths")
+```
+  
+--------  
+  
+#### Rarefaction curve plots
+Rarefaction curves show the number of [Amplicon Sequence Variants ](https://www.nature.com/articles/ismej2017119) detected as a function of sequencing depth. Optimally the cuve will flatten out, indicating that most of the diversity in the population has been sampled. Depending on the type of experiment, it may not be necessary to fully sample the community in order to obtain useful information about the major changes or trends, especially for common community members.
+
+```{r p003_rarefactionCurveV1, echo=FALSE, fig.show='hide'}
+#Native vegan package rarefaction curves (but hide the plot):
+# TODO: dig into the code and re-write, it looks like this could be sped up.
+out = rarecurve(otu_table(ps), step=100, col=groupColors[sample_data(ps)$group], lwd=2, ylab="ASVs", label=F,
+              main="Rarefaction Curve for all samples")
+
+```
+
+```{r rarefactionCurveV2setup, echo=FALSE, fig.show='hide'}
+## A ggplot rarefaction curve:
+# http://r-sig-ecology.471788.n2.nabble.com/Rarefaction-curves-in-ggplot-td7580273.html
+#library(plotly)
+
+#out <- rarecurve(otu_table(ps), step = 100, label = FALSE)
+names(out) = rownames(otu_table(ps))
+
+# Coerce data into "long" form.
+protox <- mapply(FUN = function(x, y) {
+  mydf <- as.data.frame(x)
+  colnames(mydf) <- "value"
+  mydf$SampleID <- y
+  mydf$subsample <- attr(x, "Subsample")
+  mydf
+}, x = out, y = as.list(names(out)), SIMPLIFY = FALSE)
+
+xy <- do.call(rbind, protox)
+rownames(xy) <- NULL  # pretty
+xy = data.frame(xy, 
+  sample_data(ps)[,c("Pathogen","SampleType","SampleGroup", "Field")][match(xy$SampleID, rownames(sample_data(ps))), ])
+
+```
+
+```{r p004_rarefactionCurveV1, echo=FALSE, fig.height=8, fig.width=16, fig.align="center"}
+# Plot Rarefaction curve
+ggplot(xy, aes(x = subsample, y = value, color = SampleID)) +
+theme_bw() + 
+scale_color_discrete(guide = FALSE) +  # turn legend on or off
+geom_line() +
+facet_wrap(~SampleType) + 
+labs(title="Rarefaction curves by SampleType") + xlab("Sequenced Reads") + ylab('ASVs Detected')
+
+```
+
+The rarefaction curves suggest that there is a wide range in diversity between samples in the study. Samples taken from *Root* tissue appear to be less diverse and are probably completely sampled. Samples from other sources are much more diverse.
+
+
+```{r p004.1_ASVs_vs_reads, echo=FALSE, fig.height=8, fig.width=9, fig.align="center"}
+df = data.frame(ASVs=rowSums(otu_table(ps)>0), Reads=rowSums(otu_table(ps)))
+df = data.frame(df, sample_data(ps)[,c("Pathogen","SampleType","SampleGroup", "Field", "group")][match(rownames(df), rownames(sample_data(ps))), ])
+
+# Scatter Plot, ASVs vs reads
+ggplot(df, aes(x = Reads, y = ASVs)) +
+theme_bw() + 
+geom_point(aes(color=SampleType)) +
+ggtitle("ASVs by Reads Overlapped")
+
+```
+Scatter plot of ASVs by Reads colored by tissue type indicates that Root tissue is fairly well sampled and may have a less complex microbiome than other sample types.
+
+
+
+----------- 
+
+
+### Taxonomic Assignment QA/QC
+
+Are there trends in the fraction of **reads** that can be assigned to taxonomic level by experimental variables?
+
+```{r p004.2.0_fractionReads_AssignedTaxonomy, echo=FALSE, fig.height=6, fig.width=8, fig.align="center"}
+readsPerSample = rowSums(otu_table(ps))
+fractionReadsAssigned = sapply(colnames(tax_table(ps)), function(x){
+  rowSums(otu_table(ps)[, !is.na(tax_table(ps))[,x]]) / readsPerSample
+})
+
+fractionReadsAssigned = data.frame(SampleID = rownames(fractionReadsAssigned), fractionReadsAssigned)
+fractionReadsAssigned.L = pivot_longer(fractionReadsAssigned, 
+    cols=colnames(tax_table(ps)), names_to="taxlevel", values_to="fractionReadsAssigned")
+fractionReadsAssigned.L = data.frame(fractionReadsAssigned.L, sample_data(ps)[fractionReadsAssigned.L$SampleID,
+      c("Pathogen","SampleType","SampleGroup", "Field", "DateGroup", "Cultivar", 'group')])
+
+fractionReadsAssigned.L$taxlevelf = factor(fractionReadsAssigned.L$taxlevel, levels=c("Kingdom","Phylum","Class","Order","Family","Genus","Species"))
+
+# Boxplot, fraction assigned by SampleType
+ggplot(fractionReadsAssigned.L, aes(y = fractionReadsAssigned, x = taxlevelf, fill=SampleType, color=group)) +
+  theme_bw() +
+  geom_boxplot(color='black', outlier.shape=NA) +  
+  ggtitle("Fraction of reads identified by taxonomic level") +
+  geom_point(position=position_jitterdodge(jitter.width=0, jitter.height=0), size=.5)
+  #geom_jitter(aes(color=group), width=.1, height=0)
+
+```
+
+Are there trends in the fraction of **ASVs** that can be assigned to taxonomic level by experimental variables?
+
+```{r p004.2.0_fractionASVs_AssignedTaxonomy, echo=FALSE, fig.height=6, fig.width=8, fig.align="center"}
+ASVsPerSample = rowSums(otu_table(ps)>0)
+fractionASVsAssigned = sapply(colnames(tax_table(ps)), function(x){
+  rowSums(otu_table(ps)[, !is.na(tax_table(ps))[,x]]>0) / ASVsPerSample
+})
+
+fractionASVsAssigned = data.frame(SampleID = rownames(fractionASVsAssigned), fractionASVsAssigned)
+fractionASVsAssigned.L = pivot_longer(fractionASVsAssigned, cols=colnames(tax_table(ps)), 
+    names_to="taxlevel", values_to="fractionASVsAssigned")
+fractionASVsAssigned.L = data.frame(fractionASVsAssigned.L, sample_data(ps)[fractionASVsAssigned.L$SampleID,
+      c("Pathogen","SampleType","SampleGroup", "Field", "DateGroup", "Cultivar", 'group')])
+
+fractionASVsAssigned.L$taxlevelf = factor(fractionASVsAssigned.L$taxlevel, levels=c("Kingdom","Phylum","Class","Order","Family","Genus","Species"))
+
+# Boxplot, fraction assigned by SampleType
+ggplot(fractionASVsAssigned.L, aes(y = fractionASVsAssigned, x = taxlevelf, fill=SampleType, color=group)) +
+  theme_bw() +
+  geom_boxplot(color='black', outlier.shape=NA) +  
+  ggtitle("Fraction of ASVs identified by taxonomic level") +
+  geom_point(position=position_jitterdodge(jitter.width=0, jitter.height=0), size=.5)
+  #geom_jitter(aes(color=group), width=.1, height=0)
+
+```
+
+
+
+Genus level:
+
+The statisitcs in this plot are calculated by merging taxa at the "Genus" rank with the tax_glom() function. This strategy works by summing reads from all ASVs with the same assignment at the specificed taxonomic level. The ASV with the highest read count is selected as the representative for the agglomerated set. 
+
+```{r p004.2.1_fractionGenera_vs_SampleType, echo=FALSE, fig.height=6, fig.width=8, fig.align="center"}
+ps.Genus = tax_glom(ps, taxrank="Genus")
+readsPerSample = rowSums(otu_table(ps))
+readsPerSample.genus = rowSums(otu_table(ps.Genus))
+
+df = cbind(readsPerSample, readsPerSample.genus, fraction=readsPerSample.genus/readsPerSample,
+           genusPerSample=rowSums(otu_table(ps.Genus)>0),
+           sample_data(ps)[,c("Pathogen","SampleType","SampleGroup", "Field", "DateGroup", "Cultivar")])
+
+# Boxplot, fraction assigned by SampleType
+ggplot(df, aes(y = fraction, x = SampleType)) +
+  theme_bw() +
+  geom_boxplot(color='black') +  
+  ggtitle("Fraction of reads identified to Genus by SampleType") +
+  geom_jitter(aes(color=SampleType), width=.1, height=0)
+
+```
+
+
+Top 20 most **abundant** ASVs and their taxonomic assignment:
+
+```{r p004.2.1_topAbundant, echo=FALSE, fig.height=6, fig.width=6, fig.align="center"}
+rootSamples = sample_data(ps)$SampleID[sample_data(ps)$SampleType == 'Root']
+
+prevalenceDF = data.frame(Prevalence = colSums(otu_table(ps) > 0 ),
+                          TotalAbundance = colSums(otu_table(ps)),
+                          rootPrevalence = colSums(otu_table(ps)[rootSamples,]>0),
+                          tax_table(ps)
+                          )
+idxAbundance = order(prevalenceDF$TotalAbundance, decreasing=T)
+idxPrevalence = order(prevalenceDF$Prevalence, decreasing=T)
+idxRootPrevalence = order(prevalenceDF$rootPrevalence, decreasing=T)
+
+kable(prevalenceDF[idxAbundance, ][1:20, c(1,2,3,4,8,9,10)])  %>% 
+  kable_styling("striped", full_width = F) %>%   row_spec(0, angle = 0)
+
+```
+
+Top 20 most **prevalent** ASVs and their taxonomic assignment:
+
+```{r p004.2.1_topPrevalent, echo=FALSE, fig.height=8, fig.width=9, fig.align="center"}
+
+kable(prevalenceDF[idxPrevalence, ][1:20, c(1,2,3,4,8,9,10)])  %>% 
+  kable_styling("striped", full_width = F) %>%   row_spec(0, angle = 0)
+
+```
+
+------------
+
+
+### Prevalence and dominant ASVs
+
+#### How many samples are ASVs present in?
+```{r p005_plotPrevalence1, echo=FALSE, fig.height=8, fig.width=16, fig.align="center"}
+# make a prevelance df, where rows are ASVs
+prevalenceDF = data.frame(Prevalence = colSums(otu_table(ps) > 0 ),
+                          TotalAbundance = colSums(otu_table(ps)),
+                          tax_table(ps)
+                          )
+idxAbundance = order(prevalenceDF$TotalAbundance, decreasing=T)
+
+prevalenceDF = prevalenceDF[idxAbundance, ]
+
+ggplot(prevalenceDF, aes(y=TotalAbundance, x=Prevalence)) +
+  geom_point() + ggtitle("Prevelance (number of samples an ASV appears in) as a function of Abundance (total read count)")
+
+```
+
+A small number of ASVs are present in almost all samples (high Prevalence), and also account for the majority of reads sequenced. 
+
+
+#### What is the distribution of read counts for the top 10 most abundant ASVs?
+
+```{r p005.1_TopASVs, echo=FALSE, fig.height=6, fig.width=10, fig.align="center"}
+topTenAbundance = rownames(prevalenceDF[idxAbundance,])[1:10]
+newOTU = as.data.frame(otu_table(ps)[,topTenAbundance])
+newOTU$AllOtherASVs = rowSums(otu_table(ps)) - rowSums(newOTU)
+cols = colnames(newOTU)
+newOTU = data.frame(sample_data(ps)[,c("SampleID", 'SampleGroup', 'Field', 'DateGroup', "Pathogen", "Cultivar")],
+                     newOTU)
+
+df = pivot_longer(newOTU, cols=all_of(cols), names_to="ASV")
+
+
+ggplot(df, aes(x=ASV, y=log2(value+1))) +
+    geom_boxplot(color="black") + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, face = "bold", size=10)) +
+    scale_fill_manual(values=nice_colors)  +
+    ggtitle("Read count distribution, top 10 ASVs") +
+    geom_jitter(shape=16, aes(color=Cultivar))+ scale_color_manual(values=nice_colors[-1])
+
+```
+
+ASVs 1, 3, 7, 8, and 9 are common across a large number of samples. However the community is large and complex, and bulk of the reads is within the combined set of other ASVs.
+
+------  
+
+
+-----------
+
+
+Are there trends in number of genera observed by experimental variables?
+
+```{r p004.2_GenusBoxplots, echo=FALSE, fig.height=8, fig.width=16, fig.align="center"}
+# Write out data:
+ps.Genus = tax_glom(ps, taxrank="Genus")
+save(ps.Genus, file="ps.Genus.RData")
+otuGenus = otu_table(ps.Genus)
+colnames(otuGenus) = as.data.frame(tax_table(ps.Genus)[,'Genus'])$Genus
+otuGenus = data.frame(Sample=rownames(otuGenus), otuGenus)
+write.table(otuGenus, row.names=F, sep='\t', file='otuTable_Genus.tsv')
+
+df = data.frame(Genera=rowSums(otu_table(ps.Genus)>0),
+                sample_data(ps)[,c("Pathogen","SampleType","SampleGroup", "Field", "DateGroup", "Cultivar", "group")])
+
+ggplot(df, aes(x=SampleType, y=Genera, fill=Pathogen)) +
+    geom_boxplot(color="black") + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, face = "bold", size=10)) +
+    scale_fill_manual(values=nice_colors)  +
+    ggtitle("Genera per group") +
+    facet_wrap(~Field)
+```
+
+```{r p004.2.1_GenusBoxplots, echo=FALSE, fig.height=8, fig.width=16, fig.align="center"}
+ggplot(df, aes(x=SampleGroup, y=Genera, fill=Cultivar)) +
+    geom_boxplot(color="black") + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, face = "bold", size=10)) +
+    scale_fill_manual(values=nice_colors)  +
+    ggtitle("Genera per SampleGroup")
+  
+```
+
+These samples have complex communities with >100 Genera represented in many samples.
+
+
+------
+
+
+```{r p005_plotTree, echo=FALSE, fig.height=8, fig.width=16, fig.align="center"}
+# Plot tree 
+#### Phylogenetic tree, Class level with abundance
+# ps.class = tax_glom(ps, "Class")
+# plot_tree(ps.class, label.tips="Class", color="Cultivar", size='abundance') + scale_color_manual(values=nice_colors[-1]) +
+#           ggtitle("Fungal Class, phylogeny")
+# +    facet_wrap(.~Week, ncol=2)
+
+```
+  
+------  
+
+
+#### Explore patterns of diversity in more depth 
+These figures are very large, please open them in another tab and zoom in to read the text. 
+
+Genus per sample heatmap, log read counts. Columns and rows clustered by Pearson correlation.
+
+Genera must be supported by more than 20 reads in more than 10 samples or be filtered.
+
+**IMPORTANT: ASVs that are not annotated to the Genus level are also filtered and not represented in the plot.**
+
+```{r p005.1_GenusHeatmap, echo=FALSE, fig.height=32, fig.width=30, fig.align="center"}
+library(pheatmap)
+psGenus.filt = filter_taxa(ps.Genus, function(x) sum(x>20) > 10, TRUE)
+psGenus.filt.log = transform_sample_counts(psGenus.filt, function(x) log2(x+1))
+
+# pslog.Genus <- transform_sample_counts(ps.Genus, function(x) log2(1 + x))
+# pslog.Genus.filt = filter_taxa(pslog.Genus, function(x) sum(x>4) > 10, TRUE)
+
+ann_colors = list("Cultivar" = nice_colors[c(1,3,4,5,6)], "Field" = nice_colors[c(2,7,8)],
+                  "Pathogen" = nice_colors[c(1,4,6)], "DateGroup"=nice_colors[c(2,8, 10)],
+                  "SampleType" = nice_colors[c(1,3,5)])
+names(ann_colors$Cultivar) = unique(sample_data(ps)$Cultivar)
+names(ann_colors$Field) = sort(unique(sample_data(ps)$Field))
+names(ann_colors$Pathogen) = unique(sample_data(ps)$Pathogen)
+names(ann_colors$DateGroup) = unique(sample_data(ps)$DateGroup)
+names(ann_colors$SampleType) = unique(sample_data(ps)$SampleType)
+
+df = as.matrix(as.data.frame(t(otu_table(psGenus.filt.log))))
+
+labrow = tax_table(psGenus.filt.log)[rownames(df),'Genus']
+anncol = data.frame(sample_data(psGenus.filt.log)[,c("Cultivar","Field","Pathogen","DateGroup","SampleType")])
+
+pheatmap(df, cluster_col=T, cluster_rows=T, annotation_col=anncol,
+          labels_row=labrow, 
+          show_colnames=F, annotation_colors=ann_colors,
+          clustering_distance_rows = "correlation",
+          color = viridis::cividis(20),
+          scale='none',
+          fontsize_row=8)
+```
+
+*  The SampleType shows strong clustering, with **Root** samples clustering together, and being mostly distinct from **Rhizo** and **Bulk** samples.
+
+  
+Family per sample heatmap, log read counts. Columns and rows clustered by Pearson correlation.
+Some families filtered. Columns are split by location to help with visualizations
+
+```{r p005.2_FamilyHeatmap, echo=FALSE, fig.height=32, fig.width=30, fig.align="center"}
+ps.Family = tax_glom(ps, taxrank="Family")
+psFamily.filt = filter_taxa(ps.Family, function(x) sum(x>20) > 10, TRUE)
+psFamily.filt.log = transform_sample_counts(psFamily.filt, function(x) log2(x+1))
+
+df = as.matrix(as.data.frame(t(otu_table(psFamily.filt.log))))
+labrow = tax_table(psFamily.filt.log)[rownames(df),'Family']
+anncol = data.frame(sample_data(psFamily.filt.log)[,c("Cultivar","Field","Pathogen","DateGroup","SampleType")])
+
+pheatmap(df, cluster_col=T, cluster_rows=T, 
+        labels_row=labrow, annotation_col=anncol,
+        clustering_distance_rows = "correlation", 
+        color = viridis::cividis(20),
+        annotation_colors=ann_colors,
+        show_colnames=F, fontsize_row=8)
+```
+  
+-----
+
+
+#### T-distributed stochastic neighbor embedding [TSNE](http://jmlr.org/papers/volume9/vandermaaten08a/vandermaaten08a.pdf) 
+  
+A nonlinear dimensionality reduction technique. Plotting the TSNE transformed values in two dimensions can help visualize complex, high dimensionality data. 
+
+TSNE plot all ASVs, read counts, points colored by SampleType
+
+```{r p005.3_TSNEplot, echo=FALSE, fig.height=8, fig.width=12, fig.align="center"}
+set.seed(123456)  # There is some randomness in TSNE
+library(Rtsne)
+df = as.matrix(as.data.frame(otu_table(ps)))
+
+tsne_model_1 = Rtsne(df, pca=T, dims=2)
+
+xy = data.frame(X=tsne_model_1$Y[,1], Y=tsne_model_1$Y[,2], 
+    sample_data(ps)[,c("Cultivar","Field","Pathogen","DateGroup","SampleType", "SampleGroup")])
+
+cols = nice_colors[1:3]
+names(cols) = unique(xy$SampleType)
+ggplot(xy, aes(x=X, y=Y, color=SampleType)) + 
+        geom_point(size=2) + 
+        scale_color_manual(values=cols)  +
+        theme_bw() + ggtitle("TSNE, read count")
+
+```
+
+Interactive webGL 3d TSNE plot.
+
+```{r p005.3.1_TSNEplot, echo=FALSE, fig.height=12, fig.width=16, fig.align="center", webgl=TRUE}
+#https://bookdown.org/yihui/rmarkdown-cookbook/rgl-3d.html
+library(rgl)
+knitr::knit_hooks$set(webgl = hook_webgl)
+
+set.seed(123456)  # There is some randomness in TSNE
+library(Rtsne)
+
+tsne_model_1 = Rtsne(df, pca=T, dims=3)
+
+xyz = data.frame(X=tsne_model_1$Y[,1], Y=tsne_model_1$Y[,2], Z=tsne_model_1$Y[,3],
+    sample_data(ps)[,c("Cultivar","Field","Pathogen","DateGroup","SampleType", "SampleGroup")])
+
+#plot3d(xyz$X, xyz$Y, xyz$Z, col=nice_colors[factor(xyz$SampleType)], type='s', radius=.4)
+plot3d(xyz$X, xyz$Y, xyz$Z, col=nice_colors[factor(xyz$SampleType)], type='p', size=6)
+
+```
+
+
+
+TSNE plot all ASVs, *log* read counts, colored by Field + Pathogen + SampleType
+
+```{r p005.4_TSNEplot, echo=FALSE, fig.height=8, fig.width=12, fig.align="center"}
+set.seed(123456)  # There is some randomness in TSNE
+pslog = transform_sample_counts(ps, function(x) log(x+1) )
+df = as.matrix(as.data.frame(otu_table(pslog)))
+
+tsne_model_1 = Rtsne(df, pca=T, dims=2)
+
+xy = data.frame(X=tsne_model_1$Y[,1], Y=tsne_model_1$Y[,2], 
+    sample_data(ps)[,c("Cultivar","Field","Pathogen","DateGroup","SampleType", "SampleGroup", "group")])
+
+# gg_color_hue <- function(n) {
+#   hues = seq(15, 375, length = n + 1)
+#   hcl(h = hues, l = 65, c = 100)[1:n]
+# }
+# cols = gg_color_hue(length(unique(xy$groups)))
+# names(cols) = unique(groups)
+
+ggplot(xy, aes(x=X, y=Y, color=group)) + 
+        geom_point(size=2) + 
+        scale_color_manual(values=groupColors)  +
+        theme_bw() + ggtitle("TSNE, log read count")
+```
+
+Interactive 3d webgl TSNE plot all ASVs, *log* read counts
+
+```{r p005.4.1_TSNEplot_rgl, echo=FALSE, fig.height=12, fig.width=16, fig.align="center", webgl=TRUE}
+knitr::knit_hooks$set(webgl = hook_webgl)
+
+tsne_model_1 = Rtsne(df, pca=T, dims=3)
+
+xyz = data.frame(X=tsne_model_1$Y[,1], Y=tsne_model_1$Y[,2], Z=tsne_model_1$Y[,3], 
+        sample_data(ps)[,c("Cultivar","Field","Pathogen","DateGroup","SampleType", "SampleGroup", "group")])
+
+#plot3d(xyz$X, xyz$Y, xyz$Z, col=nice_colors[factor(xyz$SampleType)], type='s', radius=.4)
+#plot3d(xyz$X, xyz$Y, xyz$Z, col=nice_colors[factor(xyz$SampleType)], type='p', size=6)
+
+# https://stackoverflow.com/questions/53764808/animating-3d-object-in-r-markdown-html-with-play3d
+plot3d(xyz$X, xyz$Y, xyz$Z, col=groupColors[xyz$group], type='p', size=6)
+# fn <- spin3d()
+# control <- par3dinterpControl(fn, 0, 12, steps = 25)
+# rglwidget() %>% playwidget(control, step=0.01, loop = TRUE, rate = 0.5)
+
+```
+
+
+------
+  
+#### Uniform Manifold Approximation and Projection [UMAP](https://arxiv.org/abs/1802.03426) 
+ 
+Another nonlinear dimensionality reduction technique. Like TSNE plots, UMAP plots can be helpful in visualizing high-dimensionality data.
+
+UMAP plot all ASV level read counts
+
+```{r p005.6_UMAP, echo=FALSE, fig.height=8, fig.width=12, fig.align="center"}
+library(umap)
+set.seed(123456)  # There is some randomness in UMAP
+
+df = as.matrix(as.data.frame(otu_table(ps)))
+
+umap.embedding = umap(df)
+
+xy = as.data.frame(umap.embedding$layout)
+xy = data.frame(xy, groups=sample_data(ps)[,"group"])
+
+ggplot(xy, aes(x=V1, y=V2, color=group)) + 
+  geom_point(size=2) + theme_bw() +
+  scale_color_manual(values=groupColors) +
+  ggtitle("UMAP plot for ASV counts")
+
+```
+
+
+UMAP plot all ASV level *log* read counts
+
+```{r p005.6_UMAPlog, echo=FALSE, fig.height=8, fig.width=12, fig.align="center"}
+library(umap)
+set.seed(123456)  # There is some randomness in UMAP
+pslog = transform_sample_counts(ps, function(x) log(x+1) )
+
+df = as.matrix(as.data.frame(otu_table(pslog)))
+
+umap.embedding = umap(df)
+
+xy = as.data.frame(umap.embedding$layout)
+xy = data.frame(xy, groups=sample_data(ps)[,'group'])
+
+ggplot(xy, aes(x=V1, y=V2, color=group)) + 
+  geom_point(size=2) + theme_bw() +
+  scale_color_manual(values=groupColors) +
+  ggtitle("UMAP plot for log ASV counts")
+
+```
+
+------
+   
+
+
+------
+
+#### More Ordination
+
+Exploratory ordination plot with log transformed counts and weighted Unifrac distance. Axes are scaled to percent variation explained.
+
+Weighted UniFrac distances tries to take phylogenetic distance as well as abundance of observed organisms into account.
+
+```{r p009_exploratoryOrdination, echo=FALSE, fig.height=7, fig.width=16, fig.align="center"}
+# https://f1000research.com/articles/5-1492/v2  Preprocessing
+pslog <- transform_sample_counts(ps, function(x) log(1 + x))
+out.wuf.log <- ordinate(pslog, method = "MDS", distance = "wunifrac")
+
+evals <- out.wuf.log$values$Eigenvalues
+plot_ordination(pslog, out.wuf.log, color = "group") +
+  labs(col = "group") +
+  scale_color_manual(values=groupColors) +
+  coord_fixed(sqrt(evals[2] / evals[1])) +
+  ggtitle("Multidimentional Scaling plot with Unifrac distances")
+
+```
+  
+
+  
+Exploratory ordination plot with log transformed counts and Bray-Curtis dissimilarity
+
+The Bray-Curtis dissimilarity tries to quantify the compositional difference between sites taking organisms present and absent from each site into consideration.
+
+```{r p010_exploratoryOrdination, echo=FALSE, fig.height=10, fig.width=16, fig.align="center"}
+# https://f1000research.com/articles/5-1492/v2  Preprocessing
+out.bray.log <- ordinate(pslog, method = "MDS", distance = "bray")
+
+evals <- out.bray.log$values$Eigenvalues
+plot_ordination(pslog, out.bray.log, color = "group") +
+  labs(col = "group") +
+  scale_color_manual(values=groupColors) +
+  coord_fixed(sqrt(evals[2] / evals[1]))
+
+
+```
+
+<!--  
+
+Exploratory ordination plot with log transformed counts and DPCoA
+Double principal coordinates analysis (DPCoA) is a phylogenetic ordination method and that provides a biplot representation of both samples and taxonomic categories. [From dissimilarities among species to dissimilarities among communities: a double principal coordinate analysis.](https://www.ncbi.nlm.nih.gov/pubmed/15178200)
+
+It takes a long time to run on a large dataset however.
+
+TODO
+
+-->
+
+```{r p011_exploratoryOrdination, echo=FALSE, fig.height=12, fig.width=16, fig.align="center"}
+# out.dpcoa.log <- ordinate(pslog, method = "DPCoA")
+
+# evals <- out.dpcoa.log$eig
+# plot_ordination(pslog, out.dpcoa.log, color = "Week_Genotype") +
+#   coord_fixed(sqrt(evals[2] / evals[1])) +
+#   labs(col = "Week_Genotype")
+```
+  
+
+-------
+  
+  
+
+### Diversity
+
+**Background**
+  
+* Richness = number of species (or whatever taxonomic grouping you are interested in) in a site
+* Evenness = measure of variance in species (groups) population in a site 
+  
+
+#### alpha-diversity - single sample measure of diversity, there are many measures with different objectives
+
+* Species Richness - how many spcies (groups) are there?
+    + OTU richness - count of different species/OTUs
+    + Chao1, ACE, etc etc - try to account for unobserved groups that were missed in sampling.
+* Species Diversity/Evenness + Richness - tries to measure varaince in speices populations as well as total species
+    + Shannon-Wiener, Shannon-Weaver, Shannon entropy
+* Phylogenetic richness estimators - estimate richness in the context of phylogney
+  
+
+#### beta-diversity - the difference in diversity between samples
+  
+
+  + TODO: add more detail.
+  
+
+#### gamma-diversity - kind of a large-scale alpha-diversity
+  
+
+Diversty measures are complicated and methods that have commonly been employed in the past have come under criticism for various shortcommings. Particularly, different levels of sampling leads to differences in diversity measurements that are partially influenced by sampling depth and based only on data from that single sample. However when multiple samples are taken from similar environments
+
+A number of "plug in" estimators have been borrowed from ecology and are commonly used in microbiome analysis. Many of these are available in the [vegan R package](https://cran.r-project.org/web/packages/vegan/index.html).
+  
+<!--  
+
+More recently, research has begun to emerge on developing alternative estimators of diversity that are tailored more specifically to microbiome communities and sampling approaches. [DivNet](https://github.com/adw96/DivNet) is a recent strategy for estimating various alpha diversity measures in microbiome datasets. [breakaway](https://github.com/adw96/breakaway) estimates richness and provides various tests. These approaches try to use additional information inferred from other samples in the set to improve estimates.
+  
+
+Literature:
+
+* [Rarefaction, Alpha Diversity, and Statistics](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6819366/)
+* [DivNet: Estimating diversity in networked communities](https://www.biorxiv.org/content/10.1101/305045v1.full)
+* [Estimating the Number of Species in Microbial Diversity Studies](https://www.annualreviews.org/doi/abs/10.1146/annurev-statistics-022513-115654)
+* And see [this](http://evolution.unibas.ch/walser/bacteria_community_analysis/2015-02-10_MBM_tutorial_combined.pdf) for a more detailed review of the large variety of diversity measures.
+* [Deciphering Diversity Indices for a Better Understanding of Microbial Communities](http://www.jmb.or.kr/submission/Journal/027/JMB027-12-02_FDOC_2.pdf)
+  
+-->
+  
+#### Plugin Alpha Diversity Plots
+These plots are generated on untrimmed datasets as indicated:
+
+>     You must use untrimmed datasets for meaningful
+>     results, as these estimates (and even the ``observed'' richness)
+>     are highly dependent on the number of singletons. You can always
+>     trim the data later on if needed, just not before using this
+>     function.
+
+Observed Richness: The number of ASVs detected per sample:
+
+```{r p006_pluginObserved, echo=FALSE, fig.height=12, fig.width=10, fig.align="center"}
+#c("Observed", "Chao1", "ACE", "Shannon",  "Simpson", "InvSimpson", "Fisher")
+
+plot_richness(ps, x="SampleGroup", measures=c("Observed"), color="group") + theme_bw() +
+  #facet_wrap(~, ncol=1) + 
+  scale_color_manual(values=groupColors) +
+  theme(axis.text.x = element_text(angle = 90, face = "bold", size=10)) + 
+  ggtitle("Observed diversity")
+
+```
+
+Shannon Diversity: Measures richness and evenness
+
+```{r p007_pluginShannon, echo=FALSE, fig.height=12, fig.width=10, fig.align="center"}
+#c("Observed", "Chao1", "ACE", "Shannon",  "Simpson", "InvSimpson", "Fisher")
+plot_richness(ps, x="SampleGroup", measures=c("Shannon"), color="group") + theme_bw() +
+  #facet_wrap(~sample_location, ncol=1) + 
+  scale_color_manual(values=groupColors) +
+  theme(axis.text.x = element_text(angle = 90, face = "bold", size=10)) + 
+  ggtitle("Shannon diversity index")
+```
+
+Chao1 index: Attempts to estimate true richness based on Poisson distribution
+```{r p008_pluginChao1, echo=FALSE, fig.height=12, fig.width=10, fig.align="center"}
+#c("Observed", "Chao1", "ACE", "Shannon",  "Simpson", "InvSimpson", "Fisher")
+plot_richness(ps, x="SampleGroup", measures=c("Chao1"), color="group") + theme_bw() +
+  #facet_wrap(~genotype, ncol=1) + 
+  scale_color_manual(values=groupColors) +
+  theme(axis.text.x = element_text(angle = 90, face = "bold", size=10)) + 
+  ggtitle("Chao1 diversity index")
+```
+
+<!--
+#### DivNet estimates and comparisons:  
+  
+  TODO
+  -->
+```{r p009_DivNetEstimates, echo=FALSE, fig.height=12, fig.width=8, fig.align="center"}
+
+#library(DivNet)
+#library(magrittr)
+
+#dn = divnet(ps, ncores=8, tuning="careful") # This might never finish
+
+## This just counts the number of non-zero taxa per sample, 
+# e.g. https://en.wikipedia.org/wiki/Diversity_index#Richness note this is at the GENUS level
+# equivalent to rowSums(otu_table(tax_glom(ps, taxrank="Genus")) > 0)
+# pipespeak: tax_glom(ps, taxrank="Genus") %>% sample_richness %>% plot
+# ps.richness = breakaway::sample_richness(tax_glom(ps, taxrank="Genus"))
+# plot(ps.richness)
+
+# # Test with X:
+# X = as.factor(apply(sample_data(ps)[,c("Week","genotype","sex")], 1, paste, collapse='_'))
+# ps2 = ps
+# sample_data(ps2)$group = as.factor(apply(sample_data(ps)[,c("Week","genotype","sex")], 1, paste, collapse='_'))
+
+# test = DivNet::divnet(tax_glom(ps2, taxrank="Phylum"), 
+#       X="group", ncores=100, tuning="careful")
+
+# testDiversity(test, h0 = "")
+
+# sb = DivNet::simplifyBeta(test, ps2, "bray-curtis", "group")
+# ggplot(sb, aes(x = interaction(Covar1, Covar2),
+#                y = beta_est,
+#                col = interaction(Covar1, Covar2))) +
+#     geom_point() +
+#     geom_linerange(aes(ymin = lower, ymax = upper)) +
+# theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   xlab("") + ylab("Estimates of Bray-Curtis distance")
+
+
+# simplifyBeta(divnet_phylum_char, lee_phylum, "bray-curtis", "char") %>%
+#   ggplot(aes(x = interaction(Covar1, Covar2), 
+#              y = beta_est,
+#              col = interaction(Covar1, Covar2))) +
+#   geom_point() +
+#   geom_linerange(aes(ymin = lower, ymax = upper)) + 
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   xlab("") + ylab("Estimates of Bray-Curtis distance")
+
+
+############# END TESTING ##############
+
+
+# save(ps.divnet.phylum, file="ps.divnet.phylum.RData")
+
+# ##
+# ps.divnet.phylum = DivNet::divnet(tax_glom(ps, taxrank="Phylum"), ncores=100, tuning="careful")
+# save(ps.divnet.phylum, file="ps.divnet.phylum.RData")
+
+# ps.divnet.family = DivNet::divnet(tax_glom(ps, taxrank="Family"), ncores=100, tuning="careful")
+# save(ps.divnet.family, file="ps.divnet.family.RData")
+
+# ps.divnet.genus = DivNet::divnet(tax_glom(ps, taxrank="Genus"), ncores=100, tuning="careful")
+# save(ps.divnet.genus, file="ps.divnet.genus.RData")
+
+```
+
+-----------
+
+
+## R session info and packages
+```{r sessionInfo}
+library("pander")
+pander(sessionInfo(), compact = FALSE)
+```

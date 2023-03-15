@@ -1,0 +1,511 @@
+---
+title: "Cristina Lazcano and Eric Boyd - strawberry endophyte and soil metagenomics 16s time course"
+author: "Sam Hunter"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, echo=FALSE, results="hide"}
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("dada2", "biomformat", "phyloseq", "pheatmap", "tidyr")
+
+library('knitr')
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dada2); packageVersion("dada2")
+library(biomformat); packageVersion("biomformat")
+library(phyloseq); packageVersion("phyloseq")
+library(ggplot2); packageVersion("ggplot2")
+#library(DECIPHER); packageVersion("DECIPHER")
+#library(phangorn); packageVersion("phangorn")
+library(pheatmap); packageVersion("pheatmap")
+library(tidyr)
+library(kableExtra)
+library(Biostrings)
+
+options(stringsAsFactors=F)
+
+wd = '/share/biocore/projects/Lazcano_Cristina_UCD/2020-06-22-Cristina_Eric-LandWaterSoil/16s.analysis/02-DADA2-analysis'
+knitr::opts_knit$set(root.dir = wd)
+setwd(wd)
+
+```
+
+## Reading data etc
+
+```{r setup_filter}
+
+#
+path <- "../01-HTS_Preproc/" # CHANGE ME to the directory containing the fastq files after unzipping.
+#path <- "../02-Overlap" # CHANGE ME to the directory containing the fastq files after unzipping.
+list.files(path)
+
+# Read in "SE" files:
+# Note that all of the NTCs were not sequenced.
+fnFs.SE = sort(list.files(path, pattern="*_SE.fastq", full.names=T))
+
+#sample.names <- paste("s", sapply(strsplit(basename(fnFs.SE), "_SE"), `[`, 1), sep='')
+sample.names <-  sapply(strsplit(basename(fnFs.SE), "_SE"), `[`, 1)
+
+#pdf(file="QC_plots.pdf", w=11, h=8)
+# # Examine quality profile plots:
+png("fnFs_quality.png", width=2000, height=1000)
+plotQualityProfile(fnFs.SE[1:11])
+dev.off()
+
+### Note that filtering and trimming should not be necessary if reads are filtered for any
+### containing an "N"
+#Perform filtering and trimming
+#Assign the filenames for the filtered fastq.gz files.
+# filt_path <- file.path("01-filtered") # Place filtered files in filtered/ subdirectory
+# filtFs <- file.path(filt_path, paste0(sample.names, "_F_filt.fastq.gz"))
+
+#Filter the forward and reverse reads
+# out <- filterAndTrim(fwd=fnFs.SE, filt=filtFs, truncLen=0, minLen=350,
+#               maxN=0, maxEE=Inf, truncQ=0, rm.phix=F, 
+#               trimLeft=0, trimRight=0, minQ=0, rm.lowcomplex=0, orient.fwd = NULL,
+#               compress=TRUE, multithread=TRUE, verbose=TRUE)
+
+
+# This filter is pretty relaxed, we keep almost all reads.  
+# out <- as.data.frame(out)
+# out$Pct = 100 * out[,"reads.out"]/out[,"reads.in"]
+# out
+
+```
+
+```{r errors}
+# Learn error rate with forward reads:
+errF <- learnErrors(fnFs.SE, multithread=TRUE)
+
+png("errors.png", width=2500, height=1500)
+    plotErrors(errF, nominalQ=TRUE)
+dev.off()
+
+```
+
+```{r dada2}
+dadaUs = dada(fnFs.SE, err=errF, multithread=TRUE, pool=T, OMEGA_C=0)  # OMEGA_C=0 ?
+#saveRDS(dadaUs, "dadaUs.RDS")  # This is really large..
+gc()
+#saveRDS(dadaUs, file="dadaUS.rds") # This file is huge and takes forever to save, don't bother.
+
+```
+
+```{r dada_summaries}
+#dadaUs.OMC = dada(filtFs, err=errF, multithread=TRUE, pool=T, OMEGA_C=0)  # OMEGA_C=0 ?
+
+#table(dadaUs$sCerus_1_F_filt.fastq.gz$map, useNA = "always")
+
+#dadaUs[[1]]
+#length(dadaUs)
+#sum(dadaUs[[1]]$clustering$abundance)
+
+#length(dadaUs[[1]]$map)
+#sum(getUniques(dadaUs[[1]]))
+#sum(is.na(dadaUs[[1]]$map))
+
+#head(getSequences(dadaUs[[1]]))
+#head(getUniques(dadaUs[[1]]))
+
+# Construct sequence table:
+seqtab <- makeSequenceTable(dadaUs)
+rownames(seqtab) = sample.names
+save(seqtab, file="seqtab.RData")
+dim(seqtab)
+
+
+# Inspect distribution of sequence lengths:
+table(nchar(getSequences(seqtab)))
+
+#  315   341   343   358   359   365   376   377   379   380   382   383   384 
+#     4     2     1     1     1     1     4     3     1     3     3     1    26 
+#   385   386   387   389   394   395   396   397   398   399   400   401   402 
+#     5     3    10     1     1     1     1     1     5     7    44   316  9922 
+#   403   404   405   406   407   408   409   410   411   412   413   414   415 
+#  3224  1834  1118   391  4088   418   463   203   345   119   321   134    88 
+#   416   417   418   419   420   421   422   423   424   425   426   427   428 
+#   415   172   192  1165   519  1368  3560   448   798   532  4866 10670  3883 
+#   429   430   431   432   433   435   436   437   438   439   440   441   442 
+#   427    59     9     1     1    18    10    66    26    22     3     1     3 
+#   443   444   445   446   447   448   450 
+#     2     2    10     4     3     5     6 
+
+
+```
+
+DADA2 recommends a chimera removal step. From what I can tell, this step takes ASVs with very high read count support and then looks for low-support ASVs that have perfect matches to the high-support ASVs over part of their length. If a low-support ASV appears to be a combination of two low-support ASVs, the low support ASV is removed from the dataset.
+
+```{r}
+
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+save(seqtab.nochim, file="seqtab.nochim.RData")
+
+# Identified 3257 bimeras out of 7538 input sequences.
+
+# Try removal with more stringent n-fold parameter
+# seqtab.nochim = removeBimeraDenovo(seqtab, method="consensus", minFoldParentOverAbundance=8, multithread=TRUE, verbose=TRUE)
+# Identified 4813 bimeras out of 8270 input sequences
+## TODO: Investigate removeBimeraDenovo further. It seems to be removing a lot of things that are exactly/almost exactly the same
+# length as the rest of the amplicons in the study, but that seems surprising given that they are supposedly chimeric sequences.
+
+gc()
+dim(seqtab.nochim)
+# [1]   213 45383
+
+
+# What faction of total bases is retained?
+sum(seqtab.nochim)/sum(seqtab)
+# [1] 0.9503154
+
+
+# Sequence lengths before nochim:
+table(nchar(getSequences(seqtab)))
+
+
+#   315   341   343   358   359   365   376   377   379   380   382   383   384 
+#     4     2     1     1     1     1     4     3     1     3     3     1    26 
+#   385   386   387   389   394   395   396   397   398   399   400   401   402 
+#     5     3    10     1     1     1     1     1     5     7    44   316  9922 
+#   403   404   405   406   407   408   409   410   411   412   413   414   415 
+#  3224  1834  1118   391  4088   418   463   203   345   119   321   134    88 
+#   416   417   418   419   420   421   422   423   424   425   426   427   428 
+#   415   172   192  1165   519  1368  3560   448   798   532  4866 10670  3883 
+#   429   430   431   432   433   435   436   437   438   439   440   441   442 
+#   427    59     9     1     1    18    10    66    26    22     3     1     3 
+#   443   444   445   446   447   448   450 
+#     2     2    10     4     3     5     6 
+
+
+# Look at distribution of fragment lengths discarded by the chimera removal step.
+table(nchar(setdiff(getSequences(seqtab),getSequences(seqtab.nochim))))
+
+#  341  365  380  383  395  398  400  401  402  403  404  405  406  407  408  409 
+#    1    1    2    1    1    1   10   12 2121  162  265   55   39 1594   42   38 
+#  410  411  412  413  414  415  416  417  418  419  420  421  422  423  424  425 
+#    3   40   18    8   12   14  109   19   16  119   57   41  278   21   19   53 
+#  426  427  428  429  431  436  437  442  443  445 
+#  273 1373  158   14    1    1    1    1    1    2 
+
+
+```
+
+#### Were the lengths of discarded chimeras the same as the original sequences?
+
+```{r PlotChimeraLengthDistribution}
+
+par(mfrow=c(2,1))
+barplot(table(nchar(getSequences(seqtab))),  
+    main="Sequence length distribution of all ASVs")
+barplot(table(nchar(setdiff(getSequences(seqtab),getSequences(seqtab.nochim)))), 
+    main="Sequence length distribution of discarded bimeras")
+
+
+```
+
+
+```{r}
+
+#Track reads through the pipeline
+getN <- function(x) sum(getUniques(x))
+
+track = data.frame(input = sapply(dadaUs, getN),
+                   denoised = rowSums(seqtab),
+                   nochim = rowSums(seqtab.nochim),
+                   ASVs = rowSums(seqtab>0),
+                   ASVs.nochim = rowSums(seqtab.nochim>0))
+
+#track <- cbind(out, sapply(dadaUs, getN), rowSums(seqtab), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+#colnames(track) <- c("input", "filtered", "pctfiltered", "denoised", "tabled", "nonchim")
+rownames(track) <- sample.names
+track
+
+write.table(data.frame(sample=rownames(track), track), file="read_tracking.tsv", sep='\t', row.names=F)
+```
+
+
+```{r heatmap}
+pdf(file='Top20_AVS_read_count_heatmap.pdf', width=8, height=16)
+df = seqtab.nochim
+seqs = colnames(df)
+colnames(df) = paste0("ASV", 1:ncol(df))
+names(seqs) = colnames(df)
+df = df[grep('Blank', rownames(df), invert=T), ]
+df = df[grep('blank', rownames(df), invert=T), ]
+df = df[grep('Zymo', rownames(df), invert=T), ]
+df = df[,order(colSums(df), decreasing=T) ]
+pheatmap(df[,1:20], main='Read count for top 20 ASVs amplicons', cluster_cols=F)
+dev.off()
+```
+
+
+```{r silva_taxonomy}
+# Assign taxonomy to nochim data: 
+taxa.silva.nochim = assignTaxonomy(seqtab.nochim, "./SILVA/silva_nr_v138_train_set_strawberry.fa.gz", multithread = T, minBoot=50)
+taxa.silva.nochim = addSpecies(taxa.silva.nochim, "./SILVA/silva_species_assignment_v138_strawberry.fa.gz")
+save(taxa.silva.nochim, file="taxa.silva.nochim.RData")
+gc()
+colSums(!is.na(taxa.silva.nochim))
+
+# Without strawberry in reference:
+# Kingdom  Phylum   Class   Order  Family   Genus Species 
+#   45371   44616   43877   40283   33991   21505     945 
+
+# With strawberry in reference:
+# Kingdom  Phylum   Class   Order  Family   Genus Species 
+#   45364   44637   43885   40267   34067   21619     948 
+
+# With strawberry and second plant in reference:
+# Kingdom  Phylum   Class   Order  Family   Genus Species 
+#   45361   44595   43865   40286   34070   21657     947 
+
+#
+#
+
+```{r compare_nochim}
+### Not run because of the massive number of ASVs generated.
+
+# Compare assignments at the Genus level:
+# library(phyloseq)
+# ASVs.nochim = DNAStringSet(colnames(seqtab.nochim))
+# names(ASVs.nochim) = paste0("ASV", 1:ncol(seqtab.nochim))
+# tmp.seqtab = seqtab.nochim
+# colnames(tmp.seqtab) = names(ASVs.nochim)
+# tmp.taxa = taxa.silva.nochim
+# rownames(tmp.taxa) = names(ASVs.nochim)
+# ps.nochim = phyloseq(otu_table(tmp.seqtab, taxa_are_rows=FALSE),
+#              tax_table(tmp.taxa),
+#              refseq(ASVs.nochim))
+
+# ps.nochim.family = tax_glom(ps.nochim, "Family")
+
+# # Get total ASVs per Family:
+# nochim.df = data.frame(Family = tax_table(ps.nochim.family)[,5], ASVcount = colSums(otu_table(ps.nochim.family)))
+
+
+# ASVs.all = DNAStringSet(colnames(seqtab))
+# names(ASVs.all) = paste0("ASV", 1:ncol(seqtab))
+# tmp.seqtab = seqtab
+# colnames(tmp.seqtab) = names(ASVs.all)
+# tmp.taxa = taxa.silva.all
+# rownames(tmp.taxa) = names(ASVs.all)
+# ps.all = phyloseq(otu_table(tmp.seqtab, taxa_are_rows=FALSE),
+#              tax_table(tmp.taxa),
+#              refseq(ASVs.all))
+# ps.all.family = tax_glom(ps.all, "Family")
+# all.df = data.frame(Family = tax_table(ps.all.family)[,5], ASVcount = colSums(otu_table(ps.all.family)))
+
+# # Compare:
+# all.family = unique(c(nochim.df$Family, all.df$Family))
+# combined.df = data.frame(Family = all.family, 
+#                          nochim = nochim.df$ASVcount[match(all.family, nochim.df$Family)],
+#                          all = all.df$ASVcount[match(all.family, all.df$Family)])
+
+# write.table(combined.df, "compare_nochim.tsv", row.names=F, sep='\t')
+
+# kable(combined.df) %>%
+#   kable_styling("striped", full_width = F) %>%
+#   row_spec(0, angle = 0)
+
+#ps.nochim.genus = tax_glom(ps.nochim, "Genus")
+
+```
+
+```{r rdp_taxonomy}
+# Not run:
+# taxa.rdp = assignTaxonomy(seqtab, './RDP/rdp_train_set_16.fa.gz', multithread=T)
+# taxa.rdp = addSpecies(taxa.rdp, "./RDP/rdp_species_assignment_16.fa.gz")
+# gc()
+# colSums(!is.na(taxa.rdp))
+```
+
+```{r UNITE_taxonomy}
+
+# taxa.UNITE = assignTaxonomy(seqtab.nochim, './UNITE/sh_general_release_dynamic_s_02.02.2019.fasta', multithread = TRUE, tryRC = TRUE)
+# gc()
+# colSums(!is.na(taxa.UNITE))
+# Kingdom  Phylum   Class   Order  Family   Genus Species 
+#    1917       2       1       1       1       1       1 
+
+# ---> There are not many/any fungal reads in this dataset.
+
+```
+
+
+```{r idTaxa}
+# TODO check out this idTaxa strategy on the new tutorial:
+# https://benjjneb.github.io/dada2/tutorial.html
+# Alternatives: The recently developed IdTaxa taxonomic classification method is also available via 
+# the DECIPHER Bioconductor package. The paper introducing the IDTAXA algorithm reports classification 
+# performance that is better than the long-time standard set by the naive Bayesian classifier. 
+# Here we include a code block that allows you to use IdTaxa as a drop-in replacement for assignTaxonomy
+# (and it’s faster as well!). Trained classifiers are available from http://DECIPHER.codes/Downloads.html.
+# Download the SILVA SSU r132 (modified) file to follow along.
+
+# library(DECIPHER); packageVersion("DECIPHER")
+
+# dna <- DNAStringSet(getSequences(seqtab.nochim)) # Create a DNAStringSet from the ASVs
+# load("./IDTAXA/SILVA_SSU_r138_2019.RData") # CHANGE TO THE PATH OF YOUR TRAINING SET
+# #ids <- IdTaxa(dna, trainingSet, strand="top", processors=NULL, verbose=FALSE, threshold=0) # use all processors
+# ids50 <- IdTaxa(dna, trainingSet, strand="top", processors=NULL, verbose=FALSE, threshold=50) # use all processors
+# ranks <- c("domain", "phylum", "class", "order", "family", "genus", "species") # ranks of interest
+# # Convert the output object of class "Taxa" to a matrix analogous to the output from assignTaxonomy
+# taxid <- t(sapply(ids50, function(x) {
+#         m <- match(ranks, x$rank)
+#         taxa <- x$taxon[m]
+#         taxa[startsWith(taxa, "unclassified_")] <- NA
+#         taxa
+# }))
+# #colnames(taxid) <- ranks; # c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# # set caps so they match DADA2 
+# colnames(taxid) = c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species") output 
+# rownames(taxid) <- getSequences(seqtab.nochim)
+# saveRDS(taxid, file="IDTAXA_taxid.RDS")
+
+# colSums(!is.na(taxid))
+
+#  Domain  Phylum   Class   Order  Family   Genus Species 
+#    1941    1695    1630    1500    1249     685       0 
+
+
+```
+
+```{r Compare_Zymo_Mock}
+### There were no zymo/mock community samples in this experiment:
+# zymo.genus = c('Pseudomonas', 'Escherichia/Shigella', 'Salmonella', 'Lactobacillus', 'Enterococcus', 'Staphylococcus', 'Listeria',
+#     'Bacillus', 'Saccharomyces', 'Cryptococcus')
+
+# unqs.mock = seqtab.nochim[grep("Zymo", rownames(seqtab.nochim)), ]
+# unqs.mock = unqs.mock[,colSums(unqs.mock) > 0]  # drop ASVs with 0 count in mock
+# unqs.mock = unqs.mock[,order(colSums(unqs.mock), decreasing=T)]  # order ASVs by count
+# mock.countTable = data.frame(taxa.silva.nochim[colnames(unqs.mock), ], stringsAsFactors=F)
+# mock.countTable$InZymo =  mock.countTable$Genus %in% zymo.genus
+# mock.countTable = data.frame(mock.countTable, t(unqs.mock), stringsAsFactors=F)
+# write.table(mock.countTable, file="Mock_count_table.tsv", row.names=F, col.names=T, sep='\t')
+
+# mock.ASVs = DNAStringSet(colnames(unqs.mock))
+# names(mock.ASVs) = paste0("ASV.", colSums(unqs.mock), "_", 
+# apply(mock.countTable[,c('Class', "Order","Family", "Genus", "Species")], 1, paste, collapse='.'))
+# writeXStringSet(mock.ASVs, file="mock_ASVs.fasta", format="fasta")
+ 
+```
+
+```{r countables}
+
+## Create Amplicon Sequence Variant (ASV) table with counts:
+CountTable.silva = data.frame(taxa.silva.nochim[colnames(seqtab.nochim), ], t(seqtab.nochim))
+CountTable.silva = CountTable.silva[order(rowSums(t(seqtab.nochim)), decreasing=T), ]
+write.table(data.frame(Sequence=rownames(CountTable.silva), CountTable.silva), row.names=F, file="AllSamples_AmpliconSequenceVariant_count_SILVA.tsv", sep='\t')
+
+# CountTable.rdp = data.frame(taxa.rdp[colnames(seqtab), ], t(seqtab))
+# CountTable.rdp = CountTable.rdp[order(rowSums(t(seqtab)), decreasing=T), ]
+# write.table(data.frame(Sequence=rownames(CountTable.rdp), CountTable.rdp), row.names=F, file="AllSamples_AmpliconSequenceVariant_count_RDP.tsv", sep='\t')
+
+```
+
+
+```{r load_metadata}
+# Load metadata for phyloseq object, re-order to match seqtab:
+#mdata = read.table("../../SampleMetadata-compiled.tsv", header=T, as.is=T, sep='\t')
+mdata = read.table("../../Master_DNA_SampleList_yr2-Modified.tsv", header=T, as.is=T, sep='\t')
+#mdata2 = mdata[match(rownames(seqtab.nochim), mdata$SampleID), ]
+
+### DOUBLE check that there are no missing samples in sample sheet or files:
+setdiff(rownames(seqtab.nochim), mdata$SampleID) 
+
+length(setdiff(rownames(seqtab.nochim), mdata$SampleID)) == 0
+
+mdata2 = mdata[match(rownames(seqtab.nochim), mdata$SampleID), ]
+rownames(mdata2) = mdata2$SampleID
+
+
+kable(mdata2) %>%
+  kable_styling("striped", full_width = F) %>%
+  row_spec(0, angle = 0)
+
+```
+
+## Make a phylogenetic tree from all of the ASV sequences
+```{r maketree}
+# https://f1000research.com/articles/5-1492
+
+library("DECIPHER")
+library("phangorn")
+
+ASVs.nochim = DNAStringSet(colnames(seqtab.nochim))
+names(ASVs.nochim) = paste0("ASV", 1:ncol(seqtab.nochim))
+
+alignment = AlignSeqs(DNAStringSet(ASVs.nochim), anchor=NA, processors=30)
+
+phang.align <- phyDat(as(alignment, "matrix"), type="DNA") # turn into phyDat format
+dm <- dist.ml(phang.align) # 
+treeNJ <- NJ(dm) # Note, tip order != sequence order
+fit = pml(treeNJ, data=phang.align)  # compute sthe likelihood of a phylogenetic tree given a sequence alignment and a model
+
+## negative edges length changed to 0!
+fitGTR <- update(fit, k=4, inv=0.2)
+# optim.pml optimizes the different model parameters, this essentially searches for a better tree using a bunch of
+# stochasitc rearrangement strategies.
+
+### TODO
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+                      rearrangement = "stochastic", control = pml.control(trace = 0))
+#detach("package:phangorn", unload=TRUE)
+save(fitGTR, file="fitGTR.RData")
+```
+
+
+```
+```{r make_phyloseq_objects}
+# Make Phyloseq objects
+library(phyloseq)
+library(Biostrings)
+
+load("fitGTR.RData")
+load("seqtab.nochim.RData")
+load('taxa.silva.nochim.RData')
+
+# create a Phyloseq object with Silva annotation:
+ASVs.nochim = DNAStringSet(colnames(seqtab.nochim))
+names(ASVs.nochim) = paste0("ASV", 1:ncol(seqtab.nochim))
+
+tmp.seqtab = seqtab.nochim
+colnames(tmp.seqtab) = names(ASVs.nochim)
+tmp.taxa = taxa.silva.nochim
+rownames(tmp.taxa) = names(ASVs.nochim)
+ps.silva.nochim = phyloseq(otu_table(tmp.seqtab, taxa_are_rows=FALSE),
+             sample_data(mdata2),
+             tax_table(tmp.taxa),
+             refseq(ASVs.nochim),
+             phy_tree(fitGTR$tree))
+save(ps.silva.nochim, file="phyloseq_nochim_silva.RData")
+
+# Create a Phyloseq object with IDTAXA annotation:
+# tmp.seqtab = seqtab.nochim
+# colnames(tmp.seqtab) = names(ASVs.nochim)
+# tmp.taxa = taxid
+# rownames(tmp.taxa) = names(ASVs.nochim)
+
+# ps.idtaxa.nochim = phyloseq(otu_table(tmp.seqtab, taxa_are_rows=FALSE),
+#              sample_data(mdata2),
+#              tax_table(tmp.taxa),
+#              refseq(ASVs.nochim),
+#              phy_tree(fitGTR$tree))
+# save(ps.idtaxa.nochim, file="phyloseq_nochim_idtaxa.RData")
+
+``` 
+
+```{r}
+# track <- cbind(out, final=rowSums(seqtab[,w]),perc=rowSums(seqtab[,w])/out$reads.in)
+# rownames(track) <- sample.names
+# write.table(track, file="track.tsv", row.names=F, sep='\t')
+
+
+kable(track) %>%
+  kable_styling("striped", full_width = F) %>%
+  row_spec(0, angle = 0)
+
+```

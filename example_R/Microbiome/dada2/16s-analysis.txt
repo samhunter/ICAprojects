@@ -1,0 +1,80 @@
+Working:
+/share/biocore/projects/Lazcano_Cristina_UCD/2020-06-22-Cristina_Eric-LandWaterSoil/16s.analysis
+
+Primers as reported produce no reads after primer trimming:
+    For 16S we used: 
+    515F (5’ -GTG YCA GCM GCC GCG GTA A- 3’) and 
+    806R (3’ -GGA CTA CNV GGG TWT CTA AT-3’) 
+
+    According to Geneious alignment to the trimmed data:
+    Geneious:   TCCTACGGGTGGCAGCAG
+                TCCTACGGGTGYCAGCMG   <--- modifed, actual prefix + part of 515F with ambiguity codes
+            GTGYCAGCMGCCGCGGTAA  <- 515F
+
+    * Note that sample m2rmt3 16s R1 has 34940/36574 reads that start with TCCTACGG
+
+    R2 trimmed: GACTACCGGGGTATCTAATC  --matches with 806R primer
+               GGACTACNVGGGTWTCTAAT  <- 806R
+
+    * Note that sample m2rmt3 16s R2 has 35600/36574 reads that start with GACTAC
+
+
+2020-07-31 - Update on primers from Zhiyi Liu at LC Sciences, LLC:
+    For V3V4, primers are:
+        341F (5'-CCTACGGGNGGCWGCAG-3’)
+        805R (5'-GACTACHVGGGTATCTAATCC-3')
+
+FINAL PRIMERS USED:
+    -The 341F updated primer from LC Sciences is missing 1bp from the 5' end. 
+     Primers used for trimming are:
+        341Fmod (5'-TCCTACGGGNGGCWGCAG-3’) -- Read1
+        805R (5'-GACTACHVGGGTATCTAATCC-3') -- Read2
+
+
+## Check overlap w/flash2 ##
+module load flash2
+mkdir -p 00-Flash2
+flash2 -m8 -M600 00-RawData/m2rmt3_R1.fastq.gz 00-RawData/m2rmt3_R2.fastq.gz -d ./00-Flash2/
+
+Peaks at: 
+    248 (primer dimer?)
+    443, 446, 461, 466
+
+
+@A00920:208:HJ75FDRXX:1:2101:25771:1344 1:N:0:TCCTGAGC+TGTGAAGC
+TCCTACGGGGGGCAGCAGTGGGGAATTTTCCGCAATGGGCGAAAGCCTGACGGAGCAATGCCGCGTGGAGGTAGAAGGCCTACGGGTCGTGAACTTCTTTTCCCGGAGAAGAAGCAATGACGGTATCTGGGGAATAAGCATCGGCTAACTCTGTGCCAGCAGCCGCGGTAATACAGAGGATGCAAGCGTTTTCCGGACTGATTGGGCGTAAAGCGTCTGTAGGTGGCTTTTTAAGTCCGCCGTCAAATCCCAGGGCTCAACCCTGGACAGGCGGTGGAAACTACCAAGCTGGAGTACGGTAGGGGCAGAGGGAATTTCCGGTGGAGCGGTGAAATGCGTAGAGATCGGAAAGAACACCAACGGCGAAAGCACTCTGCTGGGCCGACACTGACACTGAGAGACGAAAGCTAGGGGAGCAAATGGGATTAGATACCCTTGTAGTC
+@A00920:208:HJ75FDRXX:1:2101:18177:1564 1:N:0:TCCTGAGC+TGTGAAGC
+TCCTACGGGGGGCTGCAGTGGGGAATTTTCCGCAATGGGCGAAAGCCTGACGGAGCAATGCCGCGTGGAGGTAGAAGGCCTACGGGTCGTGAACTTCTTTTCCCGGAGAAGAAGCAATGACGGTATCTGGGGAATAAGCATCGGCTAACTCTGTGCCAGCAGCCGCGGTAATACAGAGGATGCAAGCGTTATCCGGAATGATTGGGCGTAAAGCGTCTGTAGGTGGCTTTTTAAGTCCGCCGTCACATCCCAGGGCTCAACCCTGGACAGGCGGTGGAAACTACCAAGCTGGAGTACGGTAGGGGCAGAGGGAATTTCCGGTGGAGCGGTGAAATGCGTAGAGATCGGAAAGAACACCAACGGCGAAAGCACTCTGCTGGGCCGACACTGACACTGAGAGACGAAAGCTAGGGGAGCAAATGGGATTAGATACCCGAGTAGTC
+
+
+## Check primer trim ##
+mkdir 00-TestPrimerTrim
+cd 00-TestPrimerTrim
+export PATH="/share/biocore/projects/Lazcano_Cristina_UCD/2020-06-22-Cristina_Eric-LandWaterSoil/HTStream/build.static/bin/:$PATH"
+
+# Test primers with the "FINAL PRIMERS USED" primers:
+hts_Primers -1 m2rmt3_R1.fastq.gz -2 m2rmt3_R2.fastq.gz -L test.log -P TCCTACGGGNGGCWGCAG  -Q GACTACHVGGGTATCTAATCC  -l 0 -d 4 -r 2 -F -f test
+    ---> 35888 of 36574 total
+
+### Clean and overlap ###
+1) Clean reads:
+    mkdir -p 01-HTS_Preproc
+    mkdir -p slurmout
+    sbatch 01-16s_htstream_amplicons.slurm
+
+    squeue -u shunter
+
+
+## Run multiqc
+module load multiqc/htstream.dev0
+multiqc -o 01-HTS_Preproc_QC -i 16s_Trimming ./01-HTS_Preproc
+
+
+### DADA2 analysis ###
+module load R/3.6.3
+02-DADA2-analysis/DADA2-analysis-SE-16S.RMD
+
+### Phyloseq ###
+cd 04-PhyloSeq
+module load R/3.6.3
+Rscript -e "rmarkdown::render('phyloseq_16s.Rmd')"
