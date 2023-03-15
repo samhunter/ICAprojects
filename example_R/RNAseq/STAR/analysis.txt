@@ -1,0 +1,134 @@
+Contacts:
+    Shaw, Dana Kathleen <dana.shaw@wsu.edu>
+
+Bioshare:
+
+
+BioBin:
+
+
+Remote working:
+
+
+Data:
+    UOregon: https://gc3fstorage.uoregon.edu/HHKYMBBXY/4185  
+    wget -r -nH --cut-dirs=1 --no-parent --reject "index.html*" https://gc3fstorage.uoregon.edu/HHKYMBBXY/4185/
+
+Notes:
+
+
+Time Log:
+
+
+###### Start Analysis ######
+
+# Get data:
+mkdir 00-RawData
+cd 00-RawData
+wget -r -nH --cut-dirs=1 --no-parent --reject "index.html*" https://gc3fstorage.uoregon.edu/HHKYMBBXY/4185/
+
+
+## Reads per sample:
+echo "sample reads adapter" > read_primer_counts.txt
+for f in ./00-RawData/*_R1_*.fastq.gz
+do
+    echo $f
+    echo `basename $f` `unpigz -c -p 50 $f | wc -l | awk '{ print $1/4 }'` `unpigz -c -p 50 $f | grep -c TCTTCTGCTTG` >> read_primer_counts.txt
+done
+
+
+# Run fastqc and multiqc to generate some information on sample quality
+
+mkdir -p ./00-FastQC/samples/
+fastqc -o ./00-FastQC/samples/ -t 60 ./00-RawData/*
+
+module load multiqc
+multiqc -d ./00-FastQC/samples/ -i FastQC -o ./00-FastQC/
+
+
+##### Clean reads #########
+module load htstream/1.3.2
+python3 01-cleaning.py
+
+parallel < 01-cleaning_commands.sh
+
+# MultiQC on htstream output:
+module load multiqc/htstream.dev0
+mkdir -p 01-HTS_multiqc_report
+multiqc -i HTSMultiQC-cleaning-report -o 01-HTS_multiqc_report ./01-cleaned
+
+
+
+########## Download reference, build index ########
+mkdir Reference
+cd Reference
+wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/892/825/GCF_002892825.2_ISE6_asm2.2_deduplicated/GCF_002892825.2_ISE6_asm2.2_deduplicated_genomic.fna.gz &
+wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/892/825/GCF_002892825.2_ISE6_asm2.2_deduplicated/GCF_002892825.2_ISE6_asm2.2_deduplicated_genomic.gtf.gz
+
+unpigz -p 25 *.gz
+
+module load star/2.7.3a
+
+mkdir staridx
+STAR --runThreadN 12 \
+     --runMode genomeGenerate \
+     --genomeDir staridx \
+     --genomeFastaFiles GCF_002892825.2_ISE6_asm2.2_deduplicated_genomic.fna \
+     --sjdbGTFfile GCF_002892825.2_ISE6_asm2.2_deduplicated_genomic.gtf \
+     --sjdbOverhang 100
+
+python3 ../extract_GTF_metadata.py
+
+###### Map reads with STAR ##########
+python3 02-map-with-STAR.py
+
+mkdir -p 02-STAR
+cd 02-STAR
+ulimit -n 2048  # the max allowed
+
+sh 02-map-with-STAR.sh
+
+module load multiqc/htstream.dev0
+multiqc -d ./02-STAR/ -i STARMapping_results -o ./02-STAR-multiqc/
+  # Note that based on the *.out.tab file, these are "first read strand" reads.
+  # https://ucdavis-bioinformatics-training.github.io/2020-mRNA_Seq_Workshop/data_reduction/03-counts_mm
+
+
+
+######## DEG analysis #######
+module load R/4.0.1
+# 03-DEG/analysis.R  - This was not run
+
+03-DEG-DESeq2/analysis.R
+
+
+
+
+
+######### Methods #############
+
+
+Methods text is very briefly:
+
+1) Read quality was first assessed with fastqc v0.11.9 and multiqc v1.9. Read count per sample and overall read quality was sufficiently good to proceed with analysis. (See FastQC_multiqc_report.html for a summary).
+
+2) Reads were cleaned with HTStream (https://github.com/s4hts/HTStream) using the following steps: a) reads were screened for PhiX spike in, b) reads potentially originating from rRNA were counted, c) reads were screened against a file of adapter sequences and matching reads were discarded, d) reads containing one or more uncalled bases ("N") were discarded, e) low quality bases were trimmed, f) reads less than 75bp in length following trimming were discarded. (See HTSMultiQC-cleaning-report_multiqc_report.html for a summary).
+
+3) Cleaned reads were then mapped against the I. scapularis reference and annotation using STAR v2.7.3a. Reference files were downloaded from:
+https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/892/825/GCF_002892825.2_ISE6_asm2.2_deduplicated/GCF_002892825.2_ISE6_asm2.2_deduplicated_genomic.fna.gz
+https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/892/825/GCF_002892825.2_ISE6_asm2.2_deduplicated/GCF_002892825.2_ISE6_asm2.2_deduplicated_genomic.gtf.gz
+
+Metadata was extracted from the GTF file using a custom python script.
+
+4) Differential expression analysis was done with R v4.0.1 and packages from Bioconductor (see sessionInfo.txt for a complete list and version numbers). The analysis largely followed steps described by Love, Michael I., Simon Anders, Vladislav Kim, and Wolfgang Huber. "RNA-Seq workflow: gene-level exploratory analysis and differential expression." F1000Research 4 (2015).
+Briefly, analysis was done as follows:
+a) Read counts from the STAR "forward" column in the ReadsPerGene.out.tab STAR output file were loaded into R for each sample.
+b) Genes labeled as gene_biotype = 'rRNA' were removed.
+c) MDS and heierarchical clustering approaches were used to assess large-scale clustering of treatment groups. With a couple of execeptions, samples showed clustering by treatment group and no samples were removed from further analysis.
+d) Genes were filtered to remove low-read count genes in an unbiased manner. Only genes with CPM > 3 in at least 5 samples were retained. This resulted in removing 21,052 genes from further analysis, and carrying out statistical tests on the remaining 9400 genes.
+e) DESeq2 was then used to estimate size factors controlling for differences in counts between samples, dispersions, and to fit a final generalized linear model. 
+f) A set of contrasts was designed to carry out each of the pairwise comparisons.
+g) Results for each comparison were reported along with annotation from the GTF file described above. Moderated log2 fold change estimates were calculated with ashr(Stephens, M. (2016) False discovery rates: a new deal. Biostatistics, 18:2. https://doi.org/10.1093/biostatistics/kxw041), ordered by p-value, and only genes where the Benjamini-Hochberg (BH) multiple-testing adjusted p-value (False Discovery Rate) was < 0.2 were reported.
+
+
+
